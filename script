@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Динозаврик з запитаннями</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+        #game-container {
+            position: relative;
+            width: 600px;
+            height: 150px;
+            border: 2px solid #000;
+            background-color: #fff;
+            margin-bottom: 20px;
+        }
+        #question {
+            display: none;
+        }
+        #question-text {
+            margin-bottom: 10px;
+        }
+        .answer-button {
+            display: block;
+            margin: 5px auto;
+            padding: 10px 20px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        .answer-button:hover {
+            background-color: #45a049;
+        }
+        #nickname {
+            margin-bottom: 10px;
+            padding: 10px;
+            font-size: 16px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            background-color: #008CBA;
+            color: white;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+        button:hover {
+            background-color: #007B9E;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <canvas id="dino-game" width="600" height="150"></canvas>
+        <div id="question">
+            <p id="question-text"></p>
+            <div id="answers"></div>
+        </div>
+    </div>
+    <input type="text" id="nickname" placeholder="Введіть ваш нікнейм">
+    <button onclick="startGame()">Почати гру</button>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.js"></script>
+    <script>
+        const questions = [
+            { question: "Яка столиця України?", answers: ["Київ", "Львів"], correct: 0 },
+            { question: "Яка найбільша річка України?", answers: ["Дніпро", "Дністер"], correct: 0 },
+            // Додайте ще 18 запитань
+        ];
+
+        let game;
+        let currentQuestionIndex = -1;
+        let wrongAnswers = 0;
+        const maxWrongAnswers = 10;
+
+        function startGame() {
+            const nickname = document.getElementById("nickname").value;
+            if (!nickname) {
+                alert("Будь ласка, введіть ваш нікнейм.");
+                return;
+            }
+
+            document.getElementById("nickname").style.display = "none";
+            document.querySelector("button").style.display = "none";
+
+            game = new Phaser.Game({
+                type: Phaser.AUTO,
+                width: 600,
+                height: 150,
+                parent: 'dino-game',
+                physics: {
+                    default: 'arcade',
+                    arcade: {
+                        gravity: { y: 300 },
+                        debug: false
+                    }
+                },
+                scene: {
+                    preload: preload,
+                    create: create,
+                    update: update
+                }
+            });
+        }
+
+        function preload() {
+            this.load.image('ground', 'https://www.gstatic.com/arcade-assets/assets/t-rex/v1/ground.png');
+            this.load.spritesheet('dino', 'https://www.gstatic.com/arcade-assets/assets/t-rex/v1/dino-spritesheet.png', { frameWidth: 44, frameHeight: 47 });
+            this.load.image('obstacle', 'https://www.gstatic.com/arcade-assets/assets/t-rex/v1/obstacle-small.png');
+        }
+
+        function create() {
+            this.ground = this.add.tileSprite(0, 130, 1200, 12, 'ground').setOrigin(0, 0);
+            this.dino = this.physics.add.sprite(50, 100, 'dino').setScale(0.5);
+            this.dino.setCollideWorldBounds(true);
+            this.dino.body.setGravityY(300);
+            this.anims.create({
+                key: 'run',
+                frames: this.anims.generateFrameNumbers('dino', { start: 2, end: 3 }),
+                frameRate: 10,
+                repeat: -1
+            });
+            this.dino.anims.play('run', true);
+            this.cursors = this.input.keyboard.createCursorKeys();
+            this.obstacles = this.physics.add.group();
+            this.physics.add.collider(this.dino, this.obstacles, handleGameOver, null, this);
+            this.time.addEvent({
+                delay: 2000,
+                callback: addObstacle,
+                callbackScope: this,
+                loop: true
+            });
+        }
+
+        function update() {
+            if (this.cursors.up.isDown && this.dino.body.touching.down) {
+                this.dino.setVelocityY(-250);
+            }
+            this.ground.tilePositionX += 5;
+            Phaser.Actions.Call(this.obstacles.getChildren(), function(obstacle) {
+                if (obstacle.x < -obstacle.displayWidth) {
+                    obstacle.setActive(false);
+                    obstacle.setVisible(false);
+                }
+            }, this);
+        }
+
+        function addObstacle() {
+            const obstacle = this.obstacles.create(600, 120, 'obstacle').setScale(0.5);
+            obstacle.setVelocityX(-200);
+            obstacle.setCollideWorldBounds(true);
+            obstacle.body.immovable = true;
+        }
+
+        function handleGameOver() {
+            this.physics.pause();
+            this.dino.setTint(0xff0000);
+            wrongAnswers++;
+            if (wrongAnswers >= maxWrongAnswers) {
+                alert("Ви програли 10 разів. Гру завершено.");
+                sendResult();
+                return;
+            }
+            currentQuestionIndex = (currentQuestionIndex + 1) % questions.length;
+            displayQuestion();
+        }
+
+        function displayQuestion() {
+            const question = questions[currentQuestionIndex];
+            document.getElementById("question-text").textContent = question.question;
+            const answersDiv = document.getElementById("answers");
+            answersDiv.innerHTML = "";
+            question.answers.forEach((answer, index) => {
+                const button = document.createElement("button");
+                button.textContent = answer;
+                button.className = 'answer-button';
+                button.onclick = () => checkAnswer(index);
+                answersDiv.appendChild(button);
+            });
+            document.getElementById("question").style.display = "block";
+        }
+
+        function checkAnswer(selectedIndex) {
+            const question = questions[currentQuestionIndex];
+            if (selectedIndex === question.correct) {
+                alert("Правильно!");
+            } else {
+                alert("Неправильно.");
+            }
+            document.getElementById("question").style.display = "none";
+            game.scene.scenes[0].scene.restart();
+        }
+
+        function sendResult() {
+            const nickname = document.getElementById("nickname").value;
+            const webhookUrl = "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL";
+            const data = {
+                username: nickname,
+                content: `Гравець ${nickname} набрав ${questions.length - wrongAnswers} балів.`
+            };
+
+            fetch(webhookUrl, {
+                method: 'POST',    
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data)
+            }).then(response => {
+                if (!response.ok) {
+                    alert("Помилка відправки результату")
